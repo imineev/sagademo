@@ -1,0 +1,34 @@
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  name: inventory-helidon-se
+spec:
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: inventory
+        version: helidon-se
+    spec:
+      containers:
+      - name: inventory
+        image: docker.io/paulparkinson/inventory-helidon-se:0.1
+        imagePullPolicy: Always
+        env:
+        - name: messaging-jms-demo.url
+          valueFrom:
+            secretKeyRef:
+              name: oracledb-service-broker-secret
+              key: oracle-jdbc-url
+        - name: messaging-jms-demo.user
+          valueFrom:
+            secretKeyRef:
+              name: oracledb-service-broker-secret
+              key: oracle-username
+        - name: messaging-jms-demo.password
+          valueFrom:
+            secretKeyRef:
+              name: oracledb-service-broker-secret
+              key: oracle-password
+        ports:
+        - containerPort: 8080
