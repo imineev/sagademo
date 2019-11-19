@@ -31,9 +31,18 @@ public final class Main {
     private Main() {
     }
 
-    public static void main(final String[] args) throws IOException {
+    public static void main(final String[] args) throws Exception {
+        if(args.length > 0) {
+            if (args[0].equals("setup")) {
+                new TravelAgencyResourceSetup().createAll();
+                return;
+            } else if (args[0].equals("clean")) {
+                new TravelAgencyResourceSetup().cleanAll();
+                return;
+            }
+        }
         TravelAgencyService travelAgencyService = new TravelAgencyService();
-        travelAgencyService.doBookTrip();
+        System.out.println("~~~~~~~~~~~~~~~~~~~~~~ saga result:" + travelAgencyService.doBookTrip());
     }
 
     public static void main0(final String[] args) throws IOException {

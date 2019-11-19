@@ -34,8 +34,12 @@ public class BookingService {
     protected static final String BOOKINGREQUESTED = "BOOKINGREQUESTED";
     static final boolean IS_AUTO_COMPENSATING_DB =
             Boolean.valueOf(System.getProperty("autocompensating.db", "false"));
-    static final boolean IS_FAIL_TEST =
-            Boolean.valueOf(System.getProperty("fail", "false"));
+    static final boolean IS_FAILBOOKING_TEST =
+            Boolean.valueOf(System.getProperty("fail.booking", "false"));
+    static final boolean IS_FAILCOMPLETE_TEST =
+            Boolean.valueOf(System.getProperty("fail.complete", "false"));
+    static final boolean IS_FAILCOMPENSATE_TEST =
+            Boolean.valueOf(System.getProperty("fail.compensate", "false"));
     static String serviceName;// = System.getProperty("service.name");
     static final String url = System.getProperty("url");
     static final String user = System.getProperty("user");

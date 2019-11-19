@@ -1,30 +1,29 @@
 package io.helidon.examples.saga.travelagency;
 
 
+import io.helidon.messaging.IncomingMessagingService;
+import io.helidon.messaging.MessageWithConnectionAndSession;
 import io.helidon.messaging.MessagingClient;
 import oracle.jdbc.pool.OracleDataSource;
 import org.eclipse.microprofile.config.Config;
 import org.eclipse.microprofile.config.spi.ConfigSource;
 
+import javax.jms.Message;
+import javax.jms.Session;
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.util.HashMap;
 import java.util.Optional;
 
 abstract class TravelAgencyCommon {
-    protected static final String eventtickets = "eventtickets";
-    protected static final String hotel = "hotel";
-    protected static final String flight = "flight";
-    protected Connection connection = null;
-    protected MessagingClient messagingClient;
-    protected String sagaid;
-    protected String eventticketsstate;
-    protected String hotelstate;
-    protected String flightstate;
-    private org.eclipse.microprofile.config.Config config;
-    public static String sagaState = null;
+    MessagingClient messagingClient;
+    String sagaid;
+    static String sagaState = null;
+    String eventticketsstate = "unknown";
+    String hotelstate = "unknown";
+    String flightstate = "unknown";
     static String sagaId;
-    private OracleDataSource dataSource;
+    Connection connection;
 
     TravelAgencyCommon(String sagaid) throws Exception  {
         setTravelAgencyConnection();
@@ -32,27 +31,27 @@ abstract class TravelAgencyCommon {
         this.sagaid = sagaid;
     }
 
-    void setTravelAgencyConnection() throws SQLException {
-        dataSource = new OracleDataSource();
+    private void setTravelAgencyConnection() throws SQLException {
+        OracleDataSource dataSource = new OracleDataSource();
         dataSource.setURL(TravelAgencyService.url);
         dataSource.setUser(TravelAgencyService.user);
         dataSource.setPassword(TravelAgencyService.password);
         connection = dataSource.getConnection();
     }
 
-    protected Config createConfig() {
+    private Config createConfig() {
         return new Config() {
             HashMap<String, String> values = new HashMap<>();
             String connectorName = "aq";
             private void createValues() {
                 values.put("mp.messaging.connector."+connectorName+".classname",
                         "io.helidon.messaging.jms.connector.JMSConnector");
-                createValuesForChannel(eventtickets, "mp.messaging.incoming.");
-                createValuesForChannel(eventtickets, "mp.messaging.outgoing.");
-                createValuesForChannel(hotel, "mp.messaging.incoming.");
-                createValuesForChannel(hotel, "mp.messaging.outgoing.");
-                createValuesForChannel(flight, "mp.messaging.incoming.");
-                createValuesForChannel(flight, "mp.messaging.outgoing.");
+                createValuesForChannel(TravelAgencyService.eventtickets, "mp.messaging.incoming.");
+                createValuesForChannel(TravelAgencyService.eventtickets, "mp.messaging.outgoing.");
+                createValuesForChannel(TravelAgencyService.hotel, "mp.messaging.incoming.");
+                createValuesForChannel(TravelAgencyService.hotel, "mp.messaging.outgoing.");
+                createValuesForChannel(TravelAgencyService.flight, "mp.messaging.incoming.");
+                createValuesForChannel(TravelAgencyService.flight, "mp.messaging.outgoing.");
             }
 
             private void createValuesForChannel(String channelname, String incomingoroutgoingprefix) {
@@ -65,6 +64,7 @@ abstract class TravelAgencyCommon {
                     values.put(incomingoroutgoingprefix + channelname + ".selector",
                             "action = '" + TravelAgencyService.BOOKINGSUCCESS + "' OR " +
                             "action = '" + TravelAgencyService.BOOKINGFAIL + "' OR " +
+                            //the following are not actually necessary for compensation in db case...
                             "action = '" + TravelAgencyService.SAGACOMPLETESUCCESS + "' OR " +
                             "action = '" + TravelAgencyService.SAGACOMPLETEFAIL + "' OR " +
                             "action = '" + TravelAgencyService.SAGACOMPENSATESUCCESS + "' OR " +
@@ -98,7 +98,79 @@ abstract class TravelAgencyCommon {
 
     }
 
+
+    void setupMessaging() {
+        IncomingMessagingService incomingMessagingService =
+                new IncomingMessagingService() {
+                    @Override
+                    public void onIncoming(org.eclipse.microprofile.reactive.messaging.Message message, Connection connection, Session session) {
+                        MessageWithConnectionAndSession messageWithConnectionAndSession = (MessageWithConnectionAndSession) message.unwrap(Message.class);
+                        try {
+                            Message jmsMessage = messageWithConnectionAndSession.getPayload();
+                            String sagaid = jmsMessage.getStringProperty("sagaid");
+                            String service = jmsMessage.getStringProperty("service");
+                            String action = jmsMessage.getStringProperty("action");
+                            System.out.println("AQ IncomingMessagingService.onIncoming " +
+                                    "sagaid:" + sagaid + "message:" + message +
+                                    " bookingService:" + service + " action/reply:" + action);
+                            switch (service) {
+                                case TravelAgencyService.EVENTTICKETS:
+                                    eventticketsstate = action;
+                                    break;
+                                case TravelAgencyService.HOTEL:
+                                    hotelstate = action;
+                                    break;
+                                case TravelAgencyService.FLIGHT:
+                                    flightstate = action;
+                                    break;
+                            }
+                        } catch (Exception e) {
+                            e.printStackTrace();
+                        }
+                    }
+                };
+        messagingClient.incoming(incomingMessagingService, TravelAgencyService.eventtickets,
+                null, true);
+        messagingClient.incoming(incomingMessagingService, TravelAgencyService.hotel,
+                null, true);
+        messagingClient.incoming(incomingMessagingService, TravelAgencyService.flight,
+                null, true);
+    }
+
+
+    abstract void updateDataInReactionToMessage(Connection connection, String service, String action) throws SQLException;
+
     abstract String processTripBookingRequest();
+
+    abstract boolean beginSaga() throws SQLException;
+
+    abstract void sendMessageToBookingService(String bookingService, String action);
+
+    boolean allParticipantsReplySuccessfully(String success, String fail, int secondsToWait) {
+        long timeMillis = System.currentTimeMillis();
+        while (System.currentTimeMillis() - timeMillis < secondsToWait * 1000) {
+            try {
+                System.out.println("Participant reply status... " +
+                        " eventticketsstate:" + eventticketsstate +
+                        " hotelstate:" + hotelstate +
+                        " flightstate:" + flightstate);
+                    if(success.equals(eventticketsstate)
+                            && success.equals(hotelstate)
+                            && success.equals(flightstate)) {
+                        return true;
+                    } else if(fail.equals(eventticketsstate)
+                            && fail.equals(hotelstate)
+                            && fail.equals(flightstate)) {
+                        return false;
+                    }
+                Thread.sleep(1 * 1000);
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+        }
+        return false;
+    }
+
 
 
 }

@@ -7,7 +7,6 @@ import io.helidon.messaging.jms.JMSMessage;
 
 import javax.jms.*;
 import java.sql.Connection;
-import java.sql.ResultSet;
 import java.sql.SQLException;
 
 
@@ -29,77 +28,101 @@ class TravelAgencyCompensationInCode extends TravelAgencyCommon {
                             Message jmsMessage = messageWithConnectionAndSession.getPayload();
                             String sagaid = jmsMessage.getStringProperty("sagaid");
                             String service = jmsMessage.getStringProperty("service");
+                            String action = jmsMessage.getStringProperty("action");
                             System.out.println("AQ IncomingMessagingService.onIncoming " +
-                                    "sagaid:" + sagaid + "message:" + message + " bookingService:" + service);
-                            connection.createStatement().execute( //todo ...
-                                    "update travelagency set  " + service + "state = 'BOOKINGSUCCESS'");
-//                                    "update travelagency set  eventticketsstate = 'BOOKINGSUCCESS', " +
-//                                            "hotelstate='BOOKINGSUCCESS', flightstate='BOOKINGSUCCESS'");
-//                            connection.createStatement().execute(
-//                                        "update travelagency set " + bookingService + "state = '"+bookingServiceReply+"' " +
-//                                                "where sagaid = '" + sagaid + "'");
+                                    "sagaid:" + sagaid + "message:" + message +
+                                    " bookingService:" + service + " action/reply:" + action);
+                            updateDataInReactionToMessage(connection, service, action);
+                            switch (service) {
+                                case TravelAgencyService.EVENTTICKETS:
+                                    eventticketsstate = action;
+                                    break;
+                                case TravelAgencyService.HOTEL:
+                                    hotelstate = action;
+                                    break;
+                                case TravelAgencyService.FLIGHT:
+                                    flightstate = action;
+                                    break;
+                            }
                         } catch (Exception e) {
                             e.printStackTrace();
                         }
                     }
                 };
-        messagingClient.incoming(incomingMessagingService, eventtickets,
+        messagingClient.incoming(incomingMessagingService, TravelAgencyService.eventtickets,
                 null, true);
-        messagingClient.incoming(incomingMessagingService, hotel,
+        messagingClient.incoming(incomingMessagingService, TravelAgencyService.hotel,
                 null, true);
-        messagingClient.incoming(incomingMessagingService, flight,
+        messagingClient.incoming(incomingMessagingService, TravelAgencyService.flight,
                 null, true);
+    }
+
+    public void updateDataInReactionToMessage(Connection connection, String service, String action) throws SQLException {
+        connection.createStatement().execute(
+                "update travelagency set  " + service + "state = '" + action + "'");
     }
 
     String processTripBookingRequest() {
-        String bookingstate = "unknown";
-        try {
-            beginSaga(); //writes to own saga table
-            updateSagaStateandSendMessageToBookingService(eventtickets, TravelAgencyService.BOOKINGREQUESTED);
-            updateSagaStateandSendMessageToBookingService(hotel, TravelAgencyService.BOOKINGREQUESTED);
-            updateSagaStateandSendMessageToBookingService(flight, TravelAgencyService.BOOKINGREQUESTED);
-            if (allParticipantsReplySuccessfully()) {
-                updateSagaStateandSendMessageToBookingService(eventtickets, TravelAgencyService.SAGACOMPLETEREQUESTED);
-                updateSagaStateandSendMessageToBookingService(hotel, TravelAgencyService.SAGACOMPLETEREQUESTED);
-                updateSagaStateandSendMessageToBookingService(flight, TravelAgencyService.SAGACOMPLETEREQUESTED);
-                //cleanup (can be async) ...
-                cleanupBookingService(eventtickets);
-                cleanupBookingService(hotel);
-                cleanupBookingService(flight);
+        String bookingstate;
+//        try {
+        beginSaga();
+        sendMessageToBookingService(TravelAgencyService.eventtickets, TravelAgencyService.BOOKINGREQUESTED);
+        sendMessageToBookingService(TravelAgencyService.hotel, TravelAgencyService.BOOKINGREQUESTED);
+        sendMessageToBookingService(TravelAgencyService.flight, TravelAgencyService.BOOKINGREQUESTED);
+        if (allParticipantsReplySuccessfully(
+                TravelAgencyService.BOOKINGSUCCESS, TravelAgencyService.BOOKINGFAIL, 300)) {
+            // complete/cleanup...
+            sendMessageToBookingService(TravelAgencyService.eventtickets, TravelAgencyService.SAGACOMPLETEREQUESTED);
+            sendMessageToBookingService(TravelAgencyService.hotel, TravelAgencyService.SAGACOMPLETEREQUESTED);
+            sendMessageToBookingService(TravelAgencyService.flight, TravelAgencyService.SAGACOMPLETEREQUESTED);
+            if (allParticipantsReplySuccessfully(TravelAgencyService.SAGACOMPLETESUCCESS,
+                    TravelAgencyService.SAGACOMPLETEFAIL, 120)) {
                 bookingstate = "success";
-            } else {
-                compensateSaga();
-                bookingstate = "compensated";
+            } else { //request status...
+                sendMessageToBookingService(TravelAgencyService.eventtickets, TravelAgencyService.STATUSREQUESTED);
+                sendMessageToBookingService(TravelAgencyService.hotel, TravelAgencyService.STATUSREQUESTED);
+                sendMessageToBookingService(TravelAgencyService.flight, TravelAgencyService.STATUSREQUESTED);
+                bookingstate = recoverBasedOnStatus();
             }
-        } catch (Exception exception) {
-            exception.printStackTrace();
-            determineIfSagaActuallyFailed();
-            compensateSaga();
-            bookingstate = "fail";
-        } finally {
-            return bookingstate;
+        } else { //compensate...
+            sendMessageToBookingService(TravelAgencyService.eventtickets, TravelAgencyService.SAGACOMPENSATEREQUESTED);
+            sendMessageToBookingService(TravelAgencyService.hotel, TravelAgencyService.SAGACOMPENSATEREQUESTED);
+            sendMessageToBookingService(TravelAgencyService.flight, TravelAgencyService.SAGACOMPENSATEREQUESTED);
+            if (allParticipantsReplySuccessfully(TravelAgencyService.SAGACOMPENSATESUCCESS,
+                    TravelAgencyService.SAGACOMPENSATEFAIL, 120)) {
+                bookingstate = "compensated";  //ie failed but compensated successfully
+            } else { //request status...
+                sendMessageToBookingService(TravelAgencyService.eventtickets, TravelAgencyService.STATUSREQUESTED);
+                sendMessageToBookingService(TravelAgencyService.hotel, TravelAgencyService.STATUSREQUESTED);
+                sendMessageToBookingService(TravelAgencyService.flight, TravelAgencyService.STATUSREQUESTED);
+                bookingstate =  recoverBasedOnStatus();
+            }
+        }
+        return bookingstate;
+    }
+
+    boolean beginSaga() {
+        try {
+            connection.createStatement().execute("delete travelagency "); //todo temporary to insure cleanAll run
+            connection.createStatement().execute(
+                    "insert into travelagency (sagaid, sagastate, eventticketsstate, hotelstate, flightstate) " +
+                            "values ('" + sagaId + "', '" + sagaState + "', '', '', '' )");
+            sagaState = "begun";
+            return true;
+        } catch (SQLException e) {
+            e.printStackTrace();
+            return false;
         }
     }
 
-    private void beginSaga() throws SQLException {
-        System.out.println("TravelAgencyCompensationInCode.beginSaga insert into travelagency table...");
-        connection.createStatement().execute(  "delete travelagency ");
-        connection.createStatement().execute(
-                "insert into travelagency (sagaid, sagastate, eventticketsstate, hotelstate, flightstate) " +
-                        "values ('" + sagaId + "', '" + sagaState + "', '', '', '' )");
-        sagaState = "begun";
-    }
-
-    private void updateSagaStateandSendMessageToBookingService(String bookingService, String action) {
+    void sendMessageToBookingService(String bookingService, String action) {
         messagingClient.outgoing((connection, session) -> new JMSMessage() {
             @Override
             public javax.jms.Message unwrap(Class unwrapType) {
                 try {
-                    System.out.println("TravelAgencyCompensationInCode updating " + bookingService + "state and " +
-                            "returning message to send...");
                     connection.createStatement().execute(
                             "update travelagency set " + bookingService + "state = '" + action + "'"
-                                    +   " where sagaid = '" + sagaid + "'");
+                                    + " where sagaid = '" + sagaid + "'");
                     TextMessage textMessage = session.createTextMessage(action + " for sagaid:" + sagaid);
                     textMessage.setStringProperty("action", action);
                     textMessage.setStringProperty("sagaid", sagaid);
@@ -112,54 +135,12 @@ class TravelAgencyCompensationInCode extends TravelAgencyCommon {
         }, bookingService, true);
     }
 
-    private boolean allParticipantsReplySuccessfully() {
-        while (true) { // todo currently we wait forever
-            try {
-            ResultSet resultSet = connection.createStatement().executeQuery(
-                    "select * from travelagency"); // where sagaid = '" + sagaid + "'");
-            if (resultSet.next()) {
-                eventticketsstate = resultSet.getString("eventticketsstate");
-                hotelstate = resultSet.getString("hotelstate");
-                flightstate = resultSet.getString("flightstate");
-                System.out.println("TravelAgencyCompensationInCode.allParticipantsReplySuccessfully " +
-                        "eventticketsstate:" + eventticketsstate + " hotelstate:" + hotelstate + " flightstate:" + flightstate);
-                if(TravelAgencyService.BOOKINGSUCCESS.equals(eventticketsstate)
-                        && TravelAgencyService.BOOKINGSUCCESS.equals(hotelstate)
-                        && TravelAgencyService.BOOKINGSUCCESS.equals(flightstate)) {
-                    System.out.println("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~SAGA SUCCESSFUL~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~");
-                    System.out.println("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~SAGA SUCCESSFUL~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~");
-                    System.out.println("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~SAGA SUCCESSFUL~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~");
-                    return true;
-                } else if(TravelAgencyService.BOOKINGFAIL.equals(eventticketsstate)
-                        && TravelAgencyService.BOOKINGFAIL.equals(hotelstate)
-                        && TravelAgencyService.BOOKINGFAIL.equals(flightstate)) {
-                    System.out.println("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~SAGA FAIL~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~");
-                    System.out.println("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~SAGA FAIL~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~");
-                    System.out.println("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~SAGA FAIl~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~");
-                    return false;
-                }
-            } else {
-                System.out.println("TravelAgencyCompensationInCode.allParticipantsReplySuccessfully " +
-                        "no entry for sagaid:" + sagaid);
-            }
-                Thread.sleep(1 * 1000);
-            } catch (Exception e) {
-                e.printStackTrace();
-            }
-        }
+
+    private String recoverBasedOnStatus() {
+        determineIfSagaActuallyFailed();
+        // ...
+        return "unknown";
     }
-
-    //completion/success cleanup methods...
-
-    private void compensateSaga() {
-//        requestCompleteSaga(TravelAgencyService.EVENTTICKETS, sagaId);
-    }
-
-    private void cleanupBookingService(String bookingService) {
-//        requestCompleteSaga(TravelAgencyService.EVENTTICKETS, sagaId);
-    }
-
-    //compensation methods...
 
     /**
      * Cleanup may have failed but the actual saga completed

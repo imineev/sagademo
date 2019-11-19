@@ -20,7 +20,7 @@ public class OracleConnection {
         return sagaId;
     }
 
-    public void commitSaga() {
+    public void commitSaga(String sagaid) {
         // if(JSON doc1a = success & JSON doc2a = success & JSON doc3a = success)
         try {
             connection.createStatement().execute("execute DBMS_Saga_Package.commit_saga(" + sagaId + ")");
@@ -30,7 +30,7 @@ public class OracleConnection {
         // else throw exception which will result in abortSaga being called
     }
 
-    public void abortSaga() {
+    public void abortSaga(String sagaid) {
         try {
             connection.createStatement().execute("execute DBMS_Saga_Package.abort_saga(" + sagaId + ")");
         } catch (SQLException e) {

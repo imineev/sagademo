@@ -26,17 +26,21 @@ import io.helidon.webserver.Service;
 public class TravelAgencyService implements Service {
 
     public static final String EVENTTICKETS = "eventtickets", FLIGHT = "flight",  HOTEL = "hotel";
-    protected static final String SAGACOMPLETEREQUESTED = "SAGACOMPLETEREQUESTED";
-    protected static final String BOOKINGFAIL = "BOOKINGFAIL";
-    protected static final String BOOKINGSUCCESS = "BOOKINGSUCCESS";
-    protected static final String SAGACOMPLETEFAIL = "SAGACOMPLETEFAIL";
-    protected static final String SAGACOMPLETESUCCESS = "SAGACOMPLETESUCCESS";
+    static final String BOOKINGREQUESTED = "BOOKINGREQUESTED";
+    static final String BOOKINGFAIL = "BOOKINGFAIL";
+    static final String BOOKINGSUCCESS = "BOOKINGSUCCESS";
+    static final String SAGACOMPLETEREQUESTED = "SAGACOMPLETEREQUESTED";
+    static final String SAGACOMPLETEFAIL = "SAGACOMPLETEFAIL";
+    static final String SAGACOMPLETESUCCESS = "SAGACOMPLETESUCCESS";
     protected static final String SAGACOMPENSATEREQUESTED = "SAGACOMPENSATEREQUESTED";
-    protected static final String SAGACOMPENSATEFAIL = "SAGACOMPENSATEFAIL";
-    protected static final String SAGACOMPENSATESUCCESS = "SAGACOMPENSATESUCCESS";
-    protected static final String BOOKINGREQUESTED = "BOOKINGREQUESTED";
+    static final String SAGACOMPENSATEFAIL = "SAGACOMPENSATEFAIL";
+    static final String SAGACOMPENSATESUCCESS = "SAGACOMPENSATESUCCESS";
+    protected static final String STATUSREQUESTED = "STATUSREQUESTED";
     static final boolean IS_AUTO_COMPENSATING_DB =
             Boolean.valueOf(System.getProperty("autocompensating.db", "false"));
+    static final String eventtickets = "eventtickets";
+    static final String hotel = "hotel";
+    static final String flight = "flight";
     static String url = System.getProperty("url");
     static String user = System.getProperty("user");
     static String password = System.getProperty("password");
@@ -52,6 +56,13 @@ public class TravelAgencyService implements Service {
         sendResponse(serverResponse, bookingstate);
     }
 
+    //todo Not all of these will be implemented...
+    //todo failure during complete/commit
+    //todo failure during compensate/abort
+    //todo travelagency crash
+    //todo booking service crash
+    //todo concurrent access of inventory in booking services
+    //todo concurrent access in general (only one saga at a time is supported by app currently)
     String doBookTrip() {
         String sagaid = "testsagaid";
         System.out.println("TravelAgencyService.booktrip IS_AUTO_COMPENSATING_DB:" + IS_AUTO_COMPENSATING_DB);
