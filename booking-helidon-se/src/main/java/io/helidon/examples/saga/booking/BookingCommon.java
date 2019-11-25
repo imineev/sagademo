@@ -1,68 +1,79 @@
 package io.helidon.examples.saga.booking;
 
+import io.helidon.messaging.MessageWithConnectionAndSession;
+import io.helidon.messaging.MessagingClient;
+import io.helidon.messaging.ProcessingMessagingService;
 import org.eclipse.microprofile.config.Config;
 import org.eclipse.microprofile.config.spi.ConfigSource;
+import org.eclipse.microprofile.reactive.messaging.Acknowledgment;
 import org.eclipse.microprofile.reactive.messaging.Message;
 
 import javax.jms.JMSException;
 import javax.jms.Session;
 import javax.jms.TextMessage;
-import java.util.HashMap;
+import java.io.InputStream;
+import java.sql.Connection;
+import java.sql.SQLException;
 import java.util.Optional;
+import java.util.Properties;
 import java.util.concurrent.CompletionStage;
 
-public class BookingCommon {
+abstract class BookingCommon {
+    MessagingClient messagingClient;
+    Properties configProps;
 
-    Config createConfig() {
+    public BookingCommon() throws Exception {
+        setConfig();
+        messagingClient = MessagingClient.build(createConfig());
+        setupMessaging();
+    }
+
+    public Properties setConfig() throws Exception {
+        configProps = new Properties();
+        InputStream inputStream = getClass().getClassLoader().getResourceAsStream("microprofile-config.properties");
+        configProps.load(inputStream);
+        return configProps;
+    }
+
+    private Config createConfig() throws Exception {
         return new Config() {
-            HashMap<String, String> values = new HashMap<>();
-            String connectorName = "aq";
-            private void createValues() {
-                values.put("mp.messaging.connector."+connectorName+".classname",
-                        "io.helidon.messaging.jms.connector.JMSConnector");
-                createValuesForChannel(BookingService.serviceName, "mp.messaging.incoming.");
-                createValuesForChannel(BookingService.serviceName, "mp.messaging.outgoing.");
-            }
-
-            private void createValuesForChannel(String channelname, String incomingoroutgoingprefix) {
-                values.put(incomingoroutgoingprefix + channelname + ".connector", connectorName);
-                values.put(incomingoroutgoingprefix + channelname + ".url", BookingService.url);
-                values.put(incomingoroutgoingprefix + channelname + ".user", BookingService.user);
-                values.put(incomingoroutgoingprefix + channelname + ".password", BookingService.password);
-                values.put(incomingoroutgoingprefix + channelname + ".queue", channelname + "queue");
-                if (incomingoroutgoingprefix.equals("mp.messaging.incoming."))
-                    values.put(incomingoroutgoingprefix + channelname + ".selector",
-                            "action = '" + BookingService.BOOKINGREQUESTED + "' OR " +
-                                    "action = '" + BookingService.SAGACOMPLETEREQUESTED + "' OR " +
-                                    "action = '" + BookingService.SAGACOMPENSATEREQUESTED + "' "
-                    );
-            }
-
-            @Override
             public <T> T getValue(String propertyName, Class<T> propertyType) {
-                createValues();
-                return (T) values.get(propertyName);
+                return (T) configProps.get(propertyName);
             }
-
-            @Override
             public <T> Optional<T> getOptionalValue(String propertyName, Class<T> propertyType) {
-                createValues();
                 return Optional.empty();
             }
-
-            @Override
             public Iterable<String> getPropertyNames() {
-                createValues();
-                return values.keySet();
+                return configProps.stringPropertyNames();
             }
-
-            @Override
             public Iterable<ConfigSource> getConfigSources() {
                 return null;
             }
         };
-
     }
+
+    void setupMessaging()  {
+        ProcessingMessagingService processingMessagingService = (message, connection, session) -> {
+            MessageWithConnectionAndSession messageWithConnectionAndSession =
+                    (MessageWithConnectionAndSession) message.unwrap(javax.jms.Message.class);
+            javax.jms.Message jmsMessage = messageWithConnectionAndSession.getPayload();
+            String action = jmsMessage.getStringProperty("action");
+            String sagaId = jmsMessage.getStringProperty("sagaid");
+            Boolean isfailtest = jmsMessage.getBooleanProperty("failtest");
+            System.out.println("Booking Service incoming jmsMessage " +
+                    "sagaid:" + sagaId + " action:" + action + " isfailtest:" + isfailtest);
+            String replyMessageAction = processIncomingMessage(connection, action, isfailtest);
+            return getReplyMessage(session, sagaId, replyMessageAction);
+        };
+        messagingClient.incomingoutgoing( processingMessagingService,
+                BookingService.serviceName, BookingService.serviceName,
+                Acknowledgment.Strategy.NONE,  true);
+        System.out.println("Waiting for booking requests...");
+    }
+
+    abstract String processIncomingMessage(Connection connection, String action, boolean isFailTest) throws SQLException;
+
+    abstract void updateDataInReactionToMessage(Connection connection, String sagacompletesuccess) throws SQLException;
 
     Message getReplyMessage(Session session, String sagaId, String replyMessageAction) {
         try {

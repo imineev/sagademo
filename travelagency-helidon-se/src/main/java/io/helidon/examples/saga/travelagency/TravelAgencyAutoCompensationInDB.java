@@ -3,28 +3,24 @@ package io.helidon.examples.saga.travelagency;
 import io.helidon.messaging.jms.JMSMessage;
 
 import javax.jms.TextMessage;
-import java.sql.Connection;
-import java.sql.SQLException;
+import java.sql.*;
 
 public class TravelAgencyAutoCompensationInDB extends TravelAgencyCommon {
 
-    OracleConnection oracleConnection = new OracleConnection();
+    OracleConnection oracleConnection = OracleConnection.build();
 
     public TravelAgencyAutoCompensationInDB(String sagaid) throws Exception {
         super(sagaid);
-        setupMessaging();
-    }
-
-    public void updateDataInReactionToMessage(Connection connection, String service, String action) throws SQLException {
-        // no-op
     }
 
     String processTripBookingRequest() {
-        String bookingstate;
+        //begin local transaction
         beginSaga();
-        sendMessageToBookingService(TravelAgencyService.eventtickets, TravelAgencyService.BOOKINGREQUESTED);
-        sendMessageToBookingService(TravelAgencyService.hotel, TravelAgencyService.BOOKINGREQUESTED);
-        sendMessageToBookingService(TravelAgencyService.flight, TravelAgencyService.BOOKINGREQUESTED);
+        sendMessageToBookingService(TravelAgencyService.EVENTTICKETS, TravelAgencyService.BOOKINGREQUESTED);
+        sendMessageToBookingService(TravelAgencyService.HOTEL, TravelAgencyService.BOOKINGREQUESTED);
+        sendMessageToBookingService(TravelAgencyService.FLIGHT, TravelAgencyService.BOOKINGREQUESTED);
+        //commit local transaction
+        sagaState = TravelAgencyService.BOOKINGREQUESTED;
         if (allParticipantsReplySuccessfully(
                 TravelAgencyService.BOOKINGSUCCESS, TravelAgencyService.BOOKINGFAIL, 300)) {
             oracleConnection.commitSaga(sagaid);
@@ -37,10 +33,11 @@ public class TravelAgencyAutoCompensationInDB extends TravelAgencyCommon {
     }
 
     boolean beginSaga() {
-        sagaId = oracleConnection.beginSaga();
+        sagaId = oracleConnection.beginSaga(); // function begin_saga return saga_id_t;
         return true;
     }
 
+    // Does function send_request (saga_id, sender, recipient, payload)
     void sendMessageToBookingService(String bookingService, String action) {
         messagingClient.outgoing((connection, session) -> new JMSMessage() {
             @Override
@@ -49,6 +46,12 @@ public class TravelAgencyAutoCompensationInDB extends TravelAgencyCommon {
                     TextMessage textMessage = session.createTextMessage(action + " for sagaid:" + sagaid);
                     textMessage.setStringProperty("action", action);
                     textMessage.setStringProperty("sagaid", sagaid);
+                    boolean isFailTest = TravelAgencyService.failtestMap.get(bookingService) != null &&
+                            TravelAgencyService.failtestMap.get(bookingService).equals(action);
+                    textMessage.setBooleanProperty("failtest", isFailTest);
+                    System.out.println("TravelAgencyCompensationInCode.unwrap " +
+                            "action:" + textMessage.getStringProperty("action")+
+                            "isFailTest:" + textMessage.getBooleanProperty("failtest"));
                     return textMessage;
                 } catch (Exception e) {
                     e.printStackTrace();
@@ -56,6 +59,10 @@ public class TravelAgencyAutoCompensationInDB extends TravelAgencyCommon {
                 }
             }
         }, bookingService, true);
+    }
+
+    public void updateDataInReactionToMessage(Connection connection, String service, String action) throws SQLException {
+        // no-op
     }
 
 }

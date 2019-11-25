@@ -22,28 +22,20 @@ package io.helidon.examples.saga.booking;
 //  use environment/config to say which io.helidon.examples.saga.booking service type
 public class BookingService {
 
-    public static final String EVENTTICKETS = "eventtickets", FLIGHT = "flight",  HOTEL = "hotel";
-    protected static final String SAGACOMPLETEREQUESTED = "SAGACOMPLETEREQUESTED";
+    protected static final String BOOKINGREQUESTED = "BOOKINGREQUESTED";
     protected static final String BOOKINGFAIL = "BOOKINGFAIL";
     protected static final String BOOKINGSUCCESS = "BOOKINGSUCCESS";
-    protected static final String SAGACOMPLETEFAIL = "SAGACOMPLETEFAIL";
+    protected static final String SAGACOMPLETEREQUESTED = "SAGACOMPLETEREQUESTED";
     protected static final String SAGACOMPLETESUCCESS = "SAGACOMPLETESUCCESS";
+    protected static final String SAGACOMPLETEFAIL = "SAGACOMPLETEFAIL";
     protected static final String SAGACOMPENSATEREQUESTED = "SAGACOMPENSATEREQUESTED";
     protected static final String SAGACOMPENSATEFAIL = "SAGACOMPENSATEFAIL";
     protected static final String SAGACOMPENSATESUCCESS = "SAGACOMPENSATESUCCESS";
-    protected static final String BOOKINGREQUESTED = "BOOKINGREQUESTED";
+    public static final String UNKNOWN = "UNKNOWN";
+    public static final String JOURNAL = "journal ";
     static final boolean IS_AUTO_COMPENSATING_DB =
             Boolean.valueOf(System.getProperty("autocompensating.db", "false"));
-    static final boolean IS_FAILBOOKING_TEST =
-            Boolean.valueOf(System.getProperty("fail.booking", "false"));
-    static final boolean IS_FAILCOMPLETE_TEST =
-            Boolean.valueOf(System.getProperty("fail.complete", "false"));
-    static final boolean IS_FAILCOMPENSATE_TEST =
-            Boolean.valueOf(System.getProperty("fail.compensate", "false"));
-    static String serviceName;// = System.getProperty("service.name");
-    static final String url = System.getProperty("url");
-    static final String user = System.getProperty("user");
-    static final String password = System.getProperty("password");
+    static String serviceName;
 
     public static void main(String args[]) throws Exception {
         serviceName = args[0];

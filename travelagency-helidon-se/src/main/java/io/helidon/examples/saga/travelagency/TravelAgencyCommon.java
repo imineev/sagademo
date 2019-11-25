@@ -9,11 +9,11 @@ import org.eclipse.microprofile.config.Config;
 import org.eclipse.microprofile.config.spi.ConfigSource;
 
 import javax.jms.Message;
-import javax.jms.Session;
+import java.io.InputStream;
 import java.sql.Connection;
 import java.sql.SQLException;
-import java.util.HashMap;
 import java.util.Optional;
+import java.util.Properties;
 
 abstract class TravelAgencyCommon {
     MessagingClient messagingClient;
@@ -24,11 +24,23 @@ abstract class TravelAgencyCommon {
     String flightstate = "unknown";
     static String sagaId;
     Connection connection;
+    Properties configProps;
+    String bookingstate;
 
     TravelAgencyCommon(String sagaid) throws Exception  {
+        setConfig();
         setTravelAgencyConnection();
         messagingClient = MessagingClient.build(createConfig());
         this.sagaid = sagaid;
+        setupIncomingMessaging();
+    }
+
+
+    public Properties setConfig() throws Exception {
+        configProps = new Properties();
+        InputStream inputStream = getClass().getClassLoader().getResourceAsStream("microprofile-config.properties");
+        configProps.load(inputStream);
+        return configProps;
     }
 
     private void setTravelAgencyConnection() throws SQLException {
@@ -39,106 +51,63 @@ abstract class TravelAgencyCommon {
         connection = dataSource.getConnection();
     }
 
-    private Config createConfig() {
+    private Config createConfig() throws Exception {
         return new Config() {
-            HashMap<String, String> values = new HashMap<>();
-            String connectorName = "aq";
-            private void createValues() {
-                values.put("mp.messaging.connector."+connectorName+".classname",
-                        "io.helidon.messaging.jms.connector.JMSConnector");
-                createValuesForChannel(TravelAgencyService.eventtickets, "mp.messaging.incoming.");
-                createValuesForChannel(TravelAgencyService.eventtickets, "mp.messaging.outgoing.");
-                createValuesForChannel(TravelAgencyService.hotel, "mp.messaging.incoming.");
-                createValuesForChannel(TravelAgencyService.hotel, "mp.messaging.outgoing.");
-                createValuesForChannel(TravelAgencyService.flight, "mp.messaging.incoming.");
-                createValuesForChannel(TravelAgencyService.flight, "mp.messaging.outgoing.");
-            }
-
-            private void createValuesForChannel(String channelname, String incomingoroutgoingprefix) {
-                values.put(incomingoroutgoingprefix + channelname + ".connector", connectorName);
-                values.put(incomingoroutgoingprefix + channelname + ".url", TravelAgencyService.url);
-                values.put(incomingoroutgoingprefix + channelname + ".user", TravelAgencyService.user);
-                values.put(incomingoroutgoingprefix + channelname + ".password", TravelAgencyService.password);
-                values.put(incomingoroutgoingprefix + channelname + ".queue", channelname + "queue");
-                if (incomingoroutgoingprefix.equals("mp.messaging.incoming."))
-                    values.put(incomingoroutgoingprefix + channelname + ".selector",
-                            "action = '" + TravelAgencyService.BOOKINGSUCCESS + "' OR " +
-                            "action = '" + TravelAgencyService.BOOKINGFAIL + "' OR " +
-                            //the following are not actually necessary for compensation in db case...
-                            "action = '" + TravelAgencyService.SAGACOMPLETESUCCESS + "' OR " +
-                            "action = '" + TravelAgencyService.SAGACOMPLETEFAIL + "' OR " +
-                            "action = '" + TravelAgencyService.SAGACOMPENSATESUCCESS + "' OR " +
-                            "action = '" + TravelAgencyService.SAGACOMPENSATEFAIL + "' "
-                            );
-            }
-
-            @Override
             public <T> T getValue(String propertyName, Class<T> propertyType) {
-                createValues();
-                return (T) values.get(propertyName);
+                return (T) configProps.get(propertyName);
             }
-
-            @Override
             public <T> Optional<T> getOptionalValue(String propertyName, Class<T> propertyType) {
-                createValues();
                 return Optional.empty();
             }
-
-            @Override
             public Iterable<String> getPropertyNames() {
-                createValues();
-                return values.keySet();
+                return configProps.stringPropertyNames();
             }
-
-            @Override
             public Iterable<ConfigSource> getConfigSources() {
                 return null;
             }
         };
-
     }
 
 
-    void setupMessaging() {
+    // Above is common config and channel setup. Below is trip booking/saga logic...
+
+
+    void setupIncomingMessaging() {
         IncomingMessagingService incomingMessagingService =
-                new IncomingMessagingService() {
-                    @Override
-                    public void onIncoming(org.eclipse.microprofile.reactive.messaging.Message message, Connection connection, Session session) {
-                        MessageWithConnectionAndSession messageWithConnectionAndSession = (MessageWithConnectionAndSession) message.unwrap(Message.class);
-                        try {
-                            Message jmsMessage = messageWithConnectionAndSession.getPayload();
-                            String sagaid = jmsMessage.getStringProperty("sagaid");
-                            String service = jmsMessage.getStringProperty("service");
-                            String action = jmsMessage.getStringProperty("action");
-                            System.out.println("AQ IncomingMessagingService.onIncoming " +
-                                    "sagaid:" + sagaid + "message:" + message +
-                                    " bookingService:" + service + " action/reply:" + action);
-                            switch (service) {
-                                case TravelAgencyService.EVENTTICKETS:
-                                    eventticketsstate = action;
-                                    break;
-                                case TravelAgencyService.HOTEL:
-                                    hotelstate = action;
-                                    break;
-                                case TravelAgencyService.FLIGHT:
-                                    flightstate = action;
-                                    break;
-                            }
-                        } catch (Exception e) {
-                            e.printStackTrace();
+                (message, connection, session) -> {
+                    MessageWithConnectionAndSession messageWithConnectionAndSession = (MessageWithConnectionAndSession) message.unwrap(Message.class);
+                    try { // does function receive_response(saga_id, recipient, sender, timeout) return JSON;
+                        Message jmsMessage = messageWithConnectionAndSession.getPayload();
+                        String sagaid = jmsMessage.getStringProperty("sagaid");
+                        String service = jmsMessage.getStringProperty("service");
+                        String action = jmsMessage.getStringProperty("action");
+                        System.out.println("AQ IncomingMessagingService.onProcessing " +
+                                "sagaid:" + sagaid + "message:" + message +
+                                " bookingService:" + service + " action/reply:" + action);
+                        updateDataInReactionToMessage(connection, service, action);
+                        switch (service) {
+                            case TravelAgencyService.EVENTTICKETS:
+                                eventticketsstate = action;
+                                break;
+                            case TravelAgencyService.HOTEL:
+                                hotelstate = action;
+                                break;
+                            case TravelAgencyService.FLIGHT:
+                                flightstate = action;
+                                break;
                         }
+                    } catch (Exception e) {
+                        e.printStackTrace();
                     }
                 };
-        messagingClient.incoming(incomingMessagingService, TravelAgencyService.eventtickets,
+        messagingClient.incoming(incomingMessagingService, TravelAgencyService.EVENTTICKETS,
                 null, true);
-        messagingClient.incoming(incomingMessagingService, TravelAgencyService.hotel,
+        messagingClient.incoming(incomingMessagingService, TravelAgencyService.HOTEL,
                 null, true);
-        messagingClient.incoming(incomingMessagingService, TravelAgencyService.flight,
+        messagingClient.incoming(incomingMessagingService, TravelAgencyService.FLIGHT,
                 null, true);
+
     }
-
-
-    abstract void updateDataInReactionToMessage(Connection connection, String service, String action) throws SQLException;
 
     abstract String processTripBookingRequest();
 
@@ -146,7 +115,9 @@ abstract class TravelAgencyCommon {
 
     abstract void sendMessageToBookingService(String bookingService, String action);
 
-    boolean allParticipantsReplySuccessfully(String success, String fail, int secondsToWait) {
+    abstract void updateDataInReactionToMessage(Connection connection, String service, String action) throws SQLException;
+
+    boolean allParticipantsReplySuccessfully(String successstate, String failstate, int secondsToWait) {
         long timeMillis = System.currentTimeMillis();
         while (System.currentTimeMillis() - timeMillis < secondsToWait * 1000) {
             try {
@@ -154,13 +125,13 @@ abstract class TravelAgencyCommon {
                         " eventticketsstate:" + eventticketsstate +
                         " hotelstate:" + hotelstate +
                         " flightstate:" + flightstate);
-                    if(success.equals(eventticketsstate)
-                            && success.equals(hotelstate)
-                            && success.equals(flightstate)) {
+                    if(successstate.equals(eventticketsstate)
+                            && successstate.equals(hotelstate)
+                            && successstate.equals(flightstate)) {
                         return true;
-                    } else if(fail.equals(eventticketsstate)
-                            && fail.equals(hotelstate)
-                            && fail.equals(flightstate)) {
+                    } else if(failstate.equals(eventticketsstate)
+                            || failstate.equals(hotelstate)
+                            || failstate.equals(flightstate)) {
                         return false;
                     }
                 Thread.sleep(1 * 1000);

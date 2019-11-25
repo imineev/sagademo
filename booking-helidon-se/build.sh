@@ -2,7 +2,7 @@
 
 SCRIPT_DIR=$(dirname $0)
 
-IMAGE_NAME=inventory-helidon-se
+IMAGE_NAME=sagabooking-helidon-se
 IMAGE_VERSION=0.1
 
 if [ -z "DEMOREGISTRY" ]; then

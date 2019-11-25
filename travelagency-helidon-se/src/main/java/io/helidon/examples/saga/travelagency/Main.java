@@ -32,6 +32,7 @@ public final class Main {
     }
 
     public static void main(final String[] args) throws Exception {
+        boolean isFailtTest = false;
         if(args.length > 0) {
             if (args[0].equals("setup")) {
                 new TravelAgencyResourceSetup().createAll();
@@ -39,10 +40,13 @@ public final class Main {
             } else if (args[0].equals("clean")) {
                 new TravelAgencyResourceSetup().cleanAll();
                 return;
+            }else if (args[0].equals("fail")) {
+                isFailtTest = true;
             }
         }
         TravelAgencyService travelAgencyService = new TravelAgencyService();
-        System.out.println("~~~~~~~~~~~~~~~~~~~~~~ saga result:" + travelAgencyService.doBookTrip());
+        startServer();
+        System.out.println("~~~~~~~~~~~~~~~~~~~~~~ saga result:" +travelAgencyService.doBookTrip(isFailtTest));
     }
 
     public static void main0(final String[] args) throws IOException {

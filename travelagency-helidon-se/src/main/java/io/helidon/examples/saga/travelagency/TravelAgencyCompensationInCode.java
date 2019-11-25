@@ -1,77 +1,68 @@
 package io.helidon.examples.saga.travelagency;
 
 
-import io.helidon.messaging.IncomingMessagingService;
-import io.helidon.messaging.MessageWithConnectionAndSession;
 import io.helidon.messaging.jms.JMSMessage;
 
 import javax.jms.*;
 import java.sql.Connection;
+import java.sql.ResultSet;
 import java.sql.SQLException;
 
 
 class TravelAgencyCompensationInCode extends TravelAgencyCommon {
-
-
     TravelAgencyCompensationInCode(String sagaid) throws Exception {
         super(sagaid);
-        setupMessaging();
+        checkForRecovery();
     }
 
-    void setupMessaging() {
-        IncomingMessagingService incomingMessagingService =
-                new IncomingMessagingService() {
-                    @Override
-                    public void onIncoming(org.eclipse.microprofile.reactive.messaging.Message message, Connection connection, Session session) {
-                        MessageWithConnectionAndSession messageWithConnectionAndSession = (MessageWithConnectionAndSession) message.unwrap(Message.class);
-                        try {
-                            Message jmsMessage = messageWithConnectionAndSession.getPayload();
-                            String sagaid = jmsMessage.getStringProperty("sagaid");
-                            String service = jmsMessage.getStringProperty("service");
-                            String action = jmsMessage.getStringProperty("action");
-                            System.out.println("AQ IncomingMessagingService.onIncoming " +
-                                    "sagaid:" + sagaid + "message:" + message +
-                                    " bookingService:" + service + " action/reply:" + action);
-                            updateDataInReactionToMessage(connection, service, action);
-                            switch (service) {
-                                case TravelAgencyService.EVENTTICKETS:
-                                    eventticketsstate = action;
-                                    break;
-                                case TravelAgencyService.HOTEL:
-                                    hotelstate = action;
-                                    break;
-                                case TravelAgencyService.FLIGHT:
-                                    flightstate = action;
-                                    break;
-                            }
-                        } catch (Exception e) {
-                            e.printStackTrace();
-                        }
-                    }
-                };
-        messagingClient.incoming(incomingMessagingService, TravelAgencyService.eventtickets,
-                null, true);
-        messagingClient.incoming(incomingMessagingService, TravelAgencyService.hotel,
-                null, true);
-        messagingClient.incoming(incomingMessagingService, TravelAgencyService.flight,
-                null, true);
+    private void checkForRecovery() throws Exception {
+        ResultSet resultSet = connection.createStatement().executeQuery(
+                "select * from travelagency");
+        while (resultSet.next())
+        {
+            String sagaId = resultSet.getString("sagaid");
+            String sagaState = resultSet.getString("sagastate");
+            recoverBasedOnStatus(sagaId, sagaState);
+        }
     }
 
-    public void updateDataInReactionToMessage(Connection connection, String service, String action) throws SQLException {
-        connection.createStatement().execute(
-                "update travelagency set  " + service + "state = '" + action + "'");
+    private String recoverBasedOnStatus(String sagaId, String sagaState) {
+        // todo backdown retries etc...
+        if (sagaState.equals(TravelAgencyService.SAGACOMPLETEREQUESTED)) {
+            System.out.println("TravelAgencyCompensationInCode.recoverBasedOnStatus complete");
+            return "success";
+        } else if (sagaState.equals(TravelAgencyService.SAGACOMPENSATEREQUESTED)) {
+            System.out.println("TravelAgencyCompensationInCode.recoverBasedOnStatus compensate");
+            return "compensated";
+        }
+        return "unknown";
+
+    }
+
+    boolean updateSagaStatus(String sagastate) {
+        try {
+            sagaState = sagastate;
+            connection.createStatement().execute(
+                    "update travelagency set sagastate = '" + sagastate + "' where sagaid = '" + sagaId + "'");
+            return true;
+        } catch (SQLException e) {
+            e.printStackTrace();
+            return false;
+        }
     }
 
     String processTripBookingRequest() {
-        String bookingstate;
-//        try {
+        //begin local transaction
         beginSaga();
-        sendMessageToBookingService(TravelAgencyService.eventtickets, TravelAgencyService.BOOKINGREQUESTED);
-        sendMessageToBookingService(TravelAgencyService.hotel, TravelAgencyService.BOOKINGREQUESTED);
-        sendMessageToBookingService(TravelAgencyService.flight, TravelAgencyService.BOOKINGREQUESTED);
+        sendMessageToBookingService(TravelAgencyService.EVENTTICKETS, TravelAgencyService.BOOKINGREQUESTED);
+        sendMessageToBookingService(TravelAgencyService.HOTEL, TravelAgencyService.BOOKINGREQUESTED);
+        sendMessageToBookingService(TravelAgencyService.FLIGHT, TravelAgencyService.BOOKINGREQUESTED);
+        //commit local transaction
+        sagaState = TravelAgencyService.BOOKINGREQUESTED;
         if (allParticipantsReplySuccessfully(
                 TravelAgencyService.BOOKINGSUCCESS, TravelAgencyService.BOOKINGFAIL, 300)) {
             // complete/cleanup...
+            updateSagaStatus(TravelAgencyService.SAGACOMPLETEREQUESTED);
             sendMessageToBookingService(TravelAgencyService.eventtickets, TravelAgencyService.SAGACOMPLETEREQUESTED);
             sendMessageToBookingService(TravelAgencyService.hotel, TravelAgencyService.SAGACOMPLETEREQUESTED);
             sendMessageToBookingService(TravelAgencyService.flight, TravelAgencyService.SAGACOMPLETEREQUESTED);
@@ -82,9 +73,10 @@ class TravelAgencyCompensationInCode extends TravelAgencyCommon {
                 sendMessageToBookingService(TravelAgencyService.eventtickets, TravelAgencyService.STATUSREQUESTED);
                 sendMessageToBookingService(TravelAgencyService.hotel, TravelAgencyService.STATUSREQUESTED);
                 sendMessageToBookingService(TravelAgencyService.flight, TravelAgencyService.STATUSREQUESTED);
-                bookingstate = recoverBasedOnStatus();
+                bookingstate = recoverBasedOnStatus(sagaid, TravelAgencyService.SAGACOMPLETEREQUESTED);
             }
         } else { //compensate...
+            updateSagaStatus(TravelAgencyService.SAGACOMPENSATEREQUESTED);
             sendMessageToBookingService(TravelAgencyService.eventtickets, TravelAgencyService.SAGACOMPENSATEREQUESTED);
             sendMessageToBookingService(TravelAgencyService.hotel, TravelAgencyService.SAGACOMPENSATEREQUESTED);
             sendMessageToBookingService(TravelAgencyService.flight, TravelAgencyService.SAGACOMPENSATEREQUESTED);
@@ -95,7 +87,7 @@ class TravelAgencyCompensationInCode extends TravelAgencyCommon {
                 sendMessageToBookingService(TravelAgencyService.eventtickets, TravelAgencyService.STATUSREQUESTED);
                 sendMessageToBookingService(TravelAgencyService.hotel, TravelAgencyService.STATUSREQUESTED);
                 sendMessageToBookingService(TravelAgencyService.flight, TravelAgencyService.STATUSREQUESTED);
-                bookingstate =  recoverBasedOnStatus();
+                bookingstate =  recoverBasedOnStatus(sagaid, TravelAgencyService.SAGACOMPENSATEREQUESTED);
             }
         }
         return bookingstate;
@@ -107,7 +99,6 @@ class TravelAgencyCompensationInCode extends TravelAgencyCommon {
             connection.createStatement().execute(
                     "insert into travelagency (sagaid, sagastate, eventticketsstate, hotelstate, flightstate) " +
                             "values ('" + sagaId + "', '" + sagaState + "', '', '', '' )");
-            sagaState = "begun";
             return true;
         } catch (SQLException e) {
             e.printStackTrace();
@@ -116,39 +107,37 @@ class TravelAgencyCompensationInCode extends TravelAgencyCommon {
     }
 
     void sendMessageToBookingService(String bookingService, String action) {
-        messagingClient.outgoing((connection, session) -> new JMSMessage() {
-            @Override
-            public javax.jms.Message unwrap(Class unwrapType) {
-                try {
-                    connection.createStatement().execute(
-                            "update travelagency set " + bookingService + "state = '" + action + "'"
-                                    + " where sagaid = '" + sagaid + "'");
-                    TextMessage textMessage = session.createTextMessage(action + " for sagaid:" + sagaid);
-                    textMessage.setStringProperty("action", action);
-                    textMessage.setStringProperty("sagaid", sagaid);
-                    return textMessage;
-                } catch (Exception e) {
-                    e.printStackTrace();
-                    return null;
+        messagingClient.outgoing((connection, session) -> {
+            return new JMSMessage() {
+                @Override
+                public Message unwrap(Class unwrapType) {
+                    try {
+                        connection.createStatement().execute(
+                                "update travelagency set " + bookingService + "state = '" + action + "'"
+                                        + " where sagaid = '" + sagaid + "'");
+                        TextMessage textMessage = session.createTextMessage(action + " for sagaid:" + sagaid);
+                        textMessage.setStringProperty("action", action);
+                        textMessage.setStringProperty("sagaid", sagaid);
+                        boolean isFailTest = TravelAgencyService.failtestMap.get(bookingService) != null &&
+                                TravelAgencyService.failtestMap.get(bookingService).equals(action);
+                        textMessage.setBooleanProperty("failtest", isFailTest);
+                        System.out.println("TravelAgencyCompensationInCode.unwrap " +
+                                "bookingService:" + bookingService +
+                                " action:" + textMessage.getStringProperty("action") +
+                                " isFailTest:" + textMessage.getBooleanProperty("failtest"));
+                        return textMessage;
+                    } catch (Exception e) {
+                        e.printStackTrace();
+                        return null;
+                    }
                 }
-            }
+            };
         }, bookingService, true);
     }
 
-
-    private String recoverBasedOnStatus() {
-        determineIfSagaActuallyFailed();
-        // ...
-        return "unknown";
-    }
-
-    /**
-     * Cleanup may have failed but the actual saga completed
-     * in which case compensation would not be appropriate.
-     */
-    private void determineIfSagaActuallyFailed() {
-//        determineStateOfParticipants();
-//        compensateSaga();
+    public void updateDataInReactionToMessage(Connection connection, String service, String action) throws SQLException {
+        connection.createStatement().execute(
+                "update travelagency set  " + service + "state = '" + action + "'");
     }
 
 }

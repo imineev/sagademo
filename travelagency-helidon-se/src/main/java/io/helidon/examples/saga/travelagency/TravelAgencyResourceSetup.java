@@ -1,6 +1,7 @@
 package io.helidon.examples.saga.travelagency;
 
 import io.helidon.messaging.IncomingMessagingService;
+import io.helidon.messaging.MessageWithConnectionAndSession;
 import io.helidon.messaging.MessagingClient;
 import oracle.AQ.AQQueueTable;
 import oracle.AQ.AQQueueTableProperty;
@@ -106,19 +107,32 @@ public class TravelAgencyResourceSetup {
                 "delete  " + tablename + "journal" );
     }
 
-    void cleanQueues() {
+    void cleanQueues()  {
         IncomingMessagingService incomingMessagingService =
                 new IncomingMessagingService() {
                     @Override
                     public void onIncoming(org.eclipse.microprofile.reactive.messaging.Message message, Connection connection, Session session) {
-                        System.out.println("no-op cleaning queue, message = [" + message.getPayload() + "]");
+                        System.out.println("cleaning queue, message = [" + message.getPayload() + "]");
+                        MessageWithConnectionAndSession messageWithConnectionAndSession = (MessageWithConnectionAndSession) message.unwrap(Message.class);
+                        Message jmsMessage = messageWithConnectionAndSession.getPayload();
+                        String sagaid = null;
+                        try {
+                            sagaid = jmsMessage.getStringProperty("sagaid");
+                            String service = jmsMessage.getStringProperty("service");
+                            String action = jmsMessage.getStringProperty("action");
+                            System.out.println("AQ IncomingMessagingService.onProcessing " +
+                                    "sagaid:" + sagaid + "message:" + message +
+                                    " bookingService:" + service + " action/reply:" + action);
+                        } catch (JMSException e) {
+                            e.printStackTrace();
+                        }
                     }
                 };
-        messagingClient.incoming(incomingMessagingService, TravelAgencyService.eventtickets,
+        messagingClient.incoming(incomingMessagingService, TravelAgencyService.EVENTTICKETS,
                 null, true);
-        messagingClient.incoming(incomingMessagingService, TravelAgencyService.hotel,
+        messagingClient.incoming(incomingMessagingService, TravelAgencyService.HOTEL,
                 null, true);
-        messagingClient.incoming(incomingMessagingService, TravelAgencyService.flight,
+        messagingClient.incoming(incomingMessagingService, TravelAgencyService.FLIGHT,
                 null, true);
     }
 
@@ -129,9 +143,9 @@ public class TravelAgencyResourceSetup {
             private void createValues() {
                 values.put("mp.messaging.connector."+connectorName+".classname",
                         "io.helidon.messaging.jms.connector.JMSConnector");
-                createValuesForChannel(TravelAgencyService.eventtickets, "mp.messaging.incoming.");
-                createValuesForChannel(TravelAgencyService.hotel, "mp.messaging.incoming.");
-                createValuesForChannel(TravelAgencyService.flight, "mp.messaging.incoming.");
+                createValuesForChannel(TravelAgencyService.EVENTTICKETS, "mp.messaging.incoming.");
+                createValuesForChannel(TravelAgencyService.HOTEL, "mp.messaging.incoming.");
+                createValuesForChannel(TravelAgencyService.FLIGHT, "mp.messaging.incoming.");
             }
 
             private void createValuesForChannel(String channelname, String incomingoroutgoingprefix) {

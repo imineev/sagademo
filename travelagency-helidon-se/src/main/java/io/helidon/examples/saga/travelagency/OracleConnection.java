@@ -10,6 +10,10 @@ public class OracleConnection {
     Connection connection = null;
     String sagaId ;
 
+    public static OracleConnection build() {
+        return null;
+    }
+
     public String beginSaga() {
         sagaId = "testSagaId";
         try {
