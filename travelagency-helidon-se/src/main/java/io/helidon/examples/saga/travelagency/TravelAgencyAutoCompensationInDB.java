@@ -2,6 +2,7 @@ package io.helidon.examples.saga.travelagency;
 
 import io.helidon.messaging.jms.JMSMessage;
 
+import javax.jms.Message;
 import javax.jms.TextMessage;
 import java.sql.*;
 
@@ -43,7 +44,9 @@ public class TravelAgencyAutoCompensationInDB extends TravelAgencyCommon {
             @Override
             public javax.jms.Message unwrap(Class unwrapType) {
                 try {
-                    TextMessage textMessage = session.createTextMessage(action + " for sagaid:" + sagaid);
+                    javax.jms.Session jmsSession =
+                            (javax.jms.Session)session.unwrap(javax.jms.Session.class);
+                    TextMessage textMessage = jmsSession.createTextMessage(action + " for sagaid:" + sagaid);
                     textMessage.setStringProperty("action", action);
                     textMessage.setStringProperty("sagaid", sagaid);
                     boolean isFailTest = TravelAgencyService.failtestMap.get(bookingService) != null &&

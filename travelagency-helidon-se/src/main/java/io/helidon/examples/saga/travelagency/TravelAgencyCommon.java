@@ -75,16 +75,19 @@ abstract class TravelAgencyCommon {
     void setupIncomingMessaging() {
         IncomingMessagingService incomingMessagingService =
                 (message, connection, session) -> {
-                    MessageWithConnectionAndSession messageWithConnectionAndSession = (MessageWithConnectionAndSession) message.unwrap(Message.class);
+                    MessageWithConnectionAndSession messageWithConnectionAndSession =
+                            (MessageWithConnectionAndSession) message.unwrap(Message.class);
                     try { // does function receive_response(saga_id, recipient, sender, timeout) return JSON;
-                        Message jmsMessage = messageWithConnectionAndSession.getPayload();
+                        Message jmsMessage =
+                                (javax.jms.Message)messageWithConnectionAndSession.getMessage(javax.jms.Session.class);
                         String sagaid = jmsMessage.getStringProperty("sagaid");
                         String service = jmsMessage.getStringProperty("service");
                         String action = jmsMessage.getStringProperty("action");
                         System.out.println("AQ IncomingMessagingService.onProcessing " +
                                 "sagaid:" + sagaid + "message:" + message +
                                 " bookingService:" + service + " action/reply:" + action);
-                        updateDataInReactionToMessage(connection, service, action);
+                        updateDataInReactionToMessage(
+                                ((java.sql.Connection)connection.unwrap(java.sql.Connection.class)), service, action);
                         switch (service) {
                             case TravelAgencyService.EVENTTICKETS:
                                 eventticketsstate = action;

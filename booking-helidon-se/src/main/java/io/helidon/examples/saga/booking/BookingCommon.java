@@ -56,7 +56,8 @@ abstract class BookingCommon {
         ProcessingMessagingService processingMessagingService = (message, connection, session) -> {
             MessageWithConnectionAndSession messageWithConnectionAndSession =
                     (MessageWithConnectionAndSession) message.unwrap(javax.jms.Message.class);
-            javax.jms.Message jmsMessage = messageWithConnectionAndSession.getPayload();
+            javax.jms.Message jmsMessage =
+                    (javax.jms.Message)messageWithConnectionAndSession.getMessage(javax.jms.Message.class);
             String action = jmsMessage.getStringProperty("action");
             String sagaId = jmsMessage.getStringProperty("sagaid");
             Boolean isfailtest = jmsMessage.getBooleanProperty("failtest");
@@ -71,13 +72,15 @@ abstract class BookingCommon {
         System.out.println("Waiting for booking requests...");
     }
 
-    abstract String processIncomingMessage(Connection connection, String action, boolean isFailTest) throws SQLException;
+    abstract String processIncomingMessage(io.helidon.messaging.Connection connection, String action, boolean isFailTest) throws SQLException;
 
-    abstract void updateDataInReactionToMessage(Connection connection, String sagacompletesuccess) throws SQLException;
+    abstract void updateDataInReactionToMessage(io.helidon.messaging.Connection connection, String sagacompletesuccess) throws SQLException;
 
-    Message getReplyMessage(Session session, String sagaId, String replyMessageAction) {
+    Message getReplyMessage(io.helidon.messaging.Session session, String sagaId, String replyMessageAction) {
         try {
-            TextMessage textMessage = session.createTextMessage(
+            javax.jms.Session jmsSession =
+                    (javax.jms.Session)session.unwrap(javax.jms.Session.class);
+            TextMessage textMessage = jmsSession.createTextMessage(
                     "booking result for " + BookingService.serviceName + " replyMessageAction:" + replyMessageAction);
             textMessage.setStringProperty("action", replyMessageAction);
             textMessage.setStringProperty("sagaid", sagaId);

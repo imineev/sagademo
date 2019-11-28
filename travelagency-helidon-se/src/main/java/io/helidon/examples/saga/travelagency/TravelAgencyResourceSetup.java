@@ -111,10 +111,14 @@ public class TravelAgencyResourceSetup {
         IncomingMessagingService incomingMessagingService =
                 new IncomingMessagingService() {
                     @Override
-                    public void onIncoming(org.eclipse.microprofile.reactive.messaging.Message message, Connection connection, Session session) {
+                    public void onIncoming(org.eclipse.microprofile.reactive.messaging.Message message,
+                                           io.helidon.messaging.Connection connection,
+                                           io.helidon.messaging.Session session) {
                         System.out.println("cleaning queue, message = [" + message.getPayload() + "]");
-                        MessageWithConnectionAndSession messageWithConnectionAndSession = (MessageWithConnectionAndSession) message.unwrap(Message.class);
-                        Message jmsMessage = messageWithConnectionAndSession.getPayload();
+                        MessageWithConnectionAndSession messageWithConnectionAndSession =
+                                (MessageWithConnectionAndSession) message.unwrap(Message.class);
+                        Message jmsMessage =
+                                (javax.jms.Message)messageWithConnectionAndSession.getMessage(javax.jms.Message.class);
                         String sagaid = null;
                         try {
                             sagaid = jmsMessage.getStringProperty("sagaid");

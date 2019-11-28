@@ -107,31 +107,31 @@ class TravelAgencyCompensationInCode extends TravelAgencyCommon {
     }
 
     void sendMessageToBookingService(String bookingService, String action) {
-        messagingClient.outgoing((connection, session) -> {
-            return new JMSMessage() {
-                @Override
-                public Message unwrap(Class unwrapType) {
-                    try {
-                        connection.createStatement().execute(
-                                "update travelagency set " + bookingService + "state = '" + action + "'"
-                                        + " where sagaid = '" + sagaid + "'");
-                        TextMessage textMessage = session.createTextMessage(action + " for sagaid:" + sagaid);
-                        textMessage.setStringProperty("action", action);
-                        textMessage.setStringProperty("sagaid", sagaid);
-                        boolean isFailTest = TravelAgencyService.failtestMap.get(bookingService) != null &&
-                                TravelAgencyService.failtestMap.get(bookingService).equals(action);
-                        textMessage.setBooleanProperty("failtest", isFailTest);
-                        System.out.println("TravelAgencyCompensationInCode.unwrap " +
-                                "bookingService:" + bookingService +
-                                " action:" + textMessage.getStringProperty("action") +
-                                " isFailTest:" + textMessage.getBooleanProperty("failtest"));
-                        return textMessage;
-                    } catch (Exception e) {
-                        e.printStackTrace();
-                        return null;
-                    }
+        messagingClient.outgoing((connection, session) -> new JMSMessage() {
+            @Override
+            public Message unwrap(Class unwrapType) {
+                try {
+                    ((java.sql.Connection)connection.unwrap(java.sql.Connection.class)).createStatement().execute(
+                            "update travelagency set " + bookingService + "state = '" + action + "'"
+                                    + " where sagaid = '" + sagaid + "'");
+                    TextMessage textMessage =
+                            ((javax.jms.Session)session.unwrap(javax.jms.Session.class))
+                                    .createTextMessage(action + " for sagaid:" + sagaid);
+                    textMessage.setStringProperty("action", action);
+                    textMessage.setStringProperty("sagaid", sagaid);
+                    boolean isFailTest = TravelAgencyService.failtestMap.get(bookingService) != null &&
+                            TravelAgencyService.failtestMap.get(bookingService).equals(action);
+                    textMessage.setBooleanProperty("failtest", isFailTest);
+                    System.out.println("TravelAgencyCompensationInCode.unwrap " +
+                            "bookingService:" + bookingService +
+                            " action:" + textMessage.getStringProperty("action") +
+                            " isFailTest:" + textMessage.getBooleanProperty("failtest"));
+                    return textMessage;
+                } catch (Exception e) {
+                    e.printStackTrace();
+                    return null;
                 }
-            };
+            }
         }, bookingService, true);
     }
 
