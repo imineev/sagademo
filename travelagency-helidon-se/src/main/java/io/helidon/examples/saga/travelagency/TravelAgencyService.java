@@ -45,21 +45,43 @@ public class TravelAgencyService implements Service {
     static final String eventtickets = "eventtickets";
     static final String hotel = "hotel";
     static final String flight = "flight";
-    static String url = System.getProperty("url");
-    static String user = System.getProperty("user");
-    static String password = System.getProperty("password");
+    static String url = System.getProperty("oracle.ucp.jdbc.PoolDataSource.travelagency.URL");
+    static String user = System.getProperty("oracle.ucp.jdbc.PoolDataSource.travelagency.user");
+    static String password = System.getProperty("oracle.ucp.jdbc.PoolDataSource.travelagency.password");
     static Map failtestMap = new HashMap();
     private TravelAgencyCommon travelAgencyServiceOperations;
 
     @Override
     public void update(Routing.Rules rules) {
+        rules.get("/setup", this::setup);
+        rules.get("/clean", this::clean);
         rules.get("/booktrip", this::booktrip);
         rules.get("/booktripfailflightbooking", this::booktripfailflightbooking);
         rules.get("/", this::home);
     }
 
+    private void setup(ServerRequest serverRequest, ServerResponse serverResponse) {
+        try {
+            new TravelAgencyResourceSetup().createAll();
+        } catch (Exception e) {
+            e.printStackTrace();
+            sendResponse(serverResponse, "setup failed e:" + e);
+        }
+        sendResponse(serverResponse, "setup successful");
+    }
+
+    private void clean(ServerRequest serverRequest, ServerResponse serverResponse) {
+        try {
+            new TravelAgencyResourceSetup().cleanAll();
+        } catch (Exception e) {
+            e.printStackTrace();
+            sendResponse(serverResponse, "clean failed e:" + e);
+        }
+        sendResponse(serverResponse, "clean successful");
+    }
+
+
     private void booktrip(ServerRequest serverRequest, ServerResponse serverResponse) {
-        String sagaId = serverRequest.path().param("sagaid");
         String bookingstate = doBookTrip(false);
         sendResponse(serverResponse, bookingstate);
     }

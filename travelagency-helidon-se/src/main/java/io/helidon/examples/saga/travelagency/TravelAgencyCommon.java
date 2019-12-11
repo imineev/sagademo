@@ -29,7 +29,7 @@ abstract class TravelAgencyCommon {
 
     TravelAgencyCommon(String sagaid) throws Exception  {
         setConfig();
-        setTravelAgencyConnection();
+        if (!TravelAgencyService.IS_AUTO_COMPENSATING_DB) setTravelAgencyConnection();
         messagingClient = MessagingClient.build(createConfig());
         this.sagaid = sagaid;
         setupIncomingMessaging();
@@ -43,6 +43,7 @@ abstract class TravelAgencyCommon {
         return configProps;
     }
 
+    //todo this would fail without sysprops currently
     private void setTravelAgencyConnection() throws SQLException {
         OracleDataSource dataSource = new OracleDataSource();
         dataSource.setURL(TravelAgencyService.url);

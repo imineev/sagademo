@@ -42,11 +42,13 @@ public final class Main {
                 return;
             }else if (args[0].equals("fail")) {
                 isFailtTest = true;
+            }else if (args[0].equals("book")) {
+                TravelAgencyService travelAgencyService = new TravelAgencyService();
+                System.out.println("~~~~~~~~~~~~~~~~~~~~~~ saga result:" +travelAgencyService.doBookTrip(isFailtTest));
             }
         }
-        TravelAgencyService travelAgencyService = new TravelAgencyService();
         startServer();
-        System.out.println("~~~~~~~~~~~~~~~~~~~~~~ saga result:" +travelAgencyService.doBookTrip(isFailtTest));
+//        System.out.println("~~~~~~~~~~~~~~~~~~~~~~ saga result:" +travelAgencyService.doBookTrip(isFailtTest));
     }
 
     public static void main0(final String[] args) throws IOException {

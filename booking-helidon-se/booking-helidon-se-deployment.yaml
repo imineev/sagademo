@@ -1,34 +1,58 @@
 apiVersion: extensions/v1beta1
 kind: Deployment
 metadata:
-  name: inventory-helidon-se
+  name: booking-helidon-se
 spec:
   replicas: 1
   template:
     metadata:
       labels:
-        app: inventory
+        app: booking
         version: helidon-se
     spec:
       containers:
-      - name: inventory
-        image: docker.io/paulparkinson/inventory-helidon-se:0.1
+      - name: booking
+        image: docker.io/paulparkinson/booking-helidon-se:0.1
         imagePullPolicy: Always
         env:
-        - name: messaging-jms-demo.url
-          valueFrom:
-            secretKeyRef:
-              name: oracledb-service-broker-secret
-              key: oracle-jdbc-url
-        - name: messaging-jms-demo.user
-          valueFrom:
-            secretKeyRef:
-              name: oracledb-service-broker-secret
-              key: oracle-username
-        - name: messaging-jms-demo.password
-          valueFrom:
-            secretKeyRef:
-              name: oracledb-service-broker-secret
-              key: oracle-password
-        ports:
-        - containerPort: 8080
+        - name: mp.messaging.incoming.eventtickets.url
+          value: someUrl
+        - name: mp.messaging.incoming.eventtickets.user
+          value: someUser
+        - name: mp.messaging.incoming.eventtickets.password
+          value: somePw
+        - name: mp.messaging.outgoing.eventtickets.url
+          value: someUrl
+        - name: mp.messaging.outgoing.eventtickets.user
+          value: someUser
+        - name: mp.messaging.outgoing.eventtickets.password
+          value: somePw
+        - name: mp.messaging.incoming.hotel.url
+          value: someUrl
+        - name: mp.messaging.incoming.hotel.user
+          value: someUser
+        - name: mp.messaging.incoming.hotel.password
+          value: somePw
+        - name: mp.messaging.outgoing.hotel.url
+          value: someUrl
+        - name: mp.messaging.outgoing.hotel.user
+          value: someUser
+        - name: mp.messaging.outgoing.hotel.password
+          value: somePw
+        - name: mp.messaging.incoming.flight.url
+          value: someUrl
+        - name: mp.messaging.incoming.flight.user
+          value: someUser
+        - name: mp.messaging.incoming.flight.password
+          value: somePw
+        - name: mp.messaging.outgoing.flight.url
+          value: someUrl
+        - name: mp.messaging.outgoing.flight.user
+          value: someUser
+        - name: mp.messaging.outgoing.flight.password
+          value: somePw
+#        - name: mp.messaging.incoming.eventtickets.password
+#          valueFrom:
+#            secretKeyRef:
+#              name: oracledb-service-broker-secret
+#              key: oracle-password
