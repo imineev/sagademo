@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="ProjectModuleManager">
+    <modules>
+      <module fileurl="file://$PROJECT_DIR$/booking-helidon-se/booking-helidon-se.iml" filepath="$PROJECT_DIR$/booking-helidon-se/booking-helidon-se.iml" />
+      <module fileurl="file://$PROJECT_DIR$/helidon-examples-saga-project.iml" filepath="$PROJECT_DIR$/helidon-examples-saga-project.iml" />
+      <module fileurl="file://$PROJECT_DIR$/travelagency-helidon-se/travelagency-helidon-se.iml" filepath="$PROJECT_DIR$/travelagency-helidon-se/travelagency-helidon-se.iml" />
+    </modules>
+  </component>
+</project>
